@@ -139,7 +139,7 @@ func authenticate(ctx context.Context) (context.Context, error) {
 	if !ok {
 		return ctx, status.New(
 			codes.Unknown,
-			"cound not found peer info",
+			"could not found peer info",
 		).Err()
 	}
 	if receivedPeer.AuthInfo == nil {

@@ -1,0 +1,17 @@
+{
+  "CN": "Client-1",
+  "hosts": [""],
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "BR",
+      "L": "BC",
+      "ST": "SC",
+      "O": "Proglog Nico",
+      "OU": "Distributed Service"
+    }
+  ]
+}

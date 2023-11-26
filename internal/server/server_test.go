@@ -2,7 +2,10 @@ package server
 
 import (
 	"context"
+	"flag"
 	"github.com/Arzanico/proglog/internal/auth"
+	"go.opencensus.io/examples/exporter"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -10,12 +13,27 @@ import (
 	"net"
 	"os"
 	"testing"
+	"time"
 
 	api "github.com/Arzanico/proglog/api/v1"
 	"github.com/Arzanico/proglog/internal/config"
 	"github.com/Arzanico/proglog/internal/log"
 	"github.com/stretchr/testify/require"
 )
+
+var debug = flag.Bool("debug", false, "Enable observability for debugging")
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if *debug {
+		logger, err := zap.NewDevelopment()
+		if err != nil {
+			panic(err)
+		}
+		zap.ReplaceGlobals(logger)
+	}
+	os.Exit(m.Run())
+}
 
 func TestServer(t *testing.T) {
 	for scenario, fn := range map[string]func(
@@ -79,7 +97,7 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient, nobodyClient api.Log
 	})
 	require.NoError(t, err)
 
-	serverCreds := credentials.NewTLS(serverTLSConfig)
+	serverCredentials := credentials.NewTLS(serverTLSConfig)
 
 	dir, err := os.MkdirTemp("", "server-test")
 	require.NoError(t, err)
@@ -89,6 +107,26 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient, nobodyClient api.Log
 
 	authorizer := auth.New(config.ACLModelFile, config.ACLPolicyFile)
 
+	var telemetryExporter *exporter.LogExporter
+	if *debug {
+		metricsLogFile, err := os.CreateTemp("", "metrics-*.log")
+		require.NoError(t, err)
+		t.Logf("metrics log file %s", metricsLogFile.Name())
+
+		tracesLogFile, err := os.CreateTemp("", "traces-*.log")
+		require.NoError(t, err)
+		t.Logf("trace log file %s", tracesLogFile.Name())
+
+		telemetryExporter, err = exporter.NewLogExporter(exporter.Options{
+			MetricsLogFile:    metricsLogFile.Name(),
+			TracesLogFile:     tracesLogFile.Name(),
+			ReportingInterval: time.Second,
+		})
+		require.NoError(t, err)
+		err = telemetryExporter.Start()
+		require.NoError(t, err)
+	}
+
 	cfg = &Config{
 		CommitLog:  clog,
 		Authorizer: authorizer,
@@ -97,7 +135,7 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient, nobodyClient api.Log
 		fn(cfg)
 	}
 
-	server, err := NewGRPCServer(cfg, grpc.Creds(serverCreds))
+	server, err := NewGRPCServer(cfg, grpc.Creds(serverCredentials))
 	require.NoError(t, err)
 
 	go func() {
@@ -109,6 +147,11 @@ func setupTest(t *testing.T, fn func(*Config)) (rootClient, nobodyClient api.Log
 		rootConn.Close()
 		nobodyConn.Close()
 		l.Close()
+		if telemetryExporter != nil {
+			time.Sleep(1500 * time.Millisecond)
+			telemetryExporter.Stop()
+			telemetryExporter.Close()
+		}
 	}
 
 }

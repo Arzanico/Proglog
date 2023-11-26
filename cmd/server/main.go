@@ -11,5 +11,4 @@ func main() {
 	fmt.Println("Server is up and running in port: 8080")
 	srv := server.NewHTTPServer(":8080")
 	log.Fatal(srv.ListenAndServe())
-
 }
